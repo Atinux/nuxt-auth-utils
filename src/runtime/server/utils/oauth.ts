@@ -8,6 +8,7 @@ import { discordEventHandler } from '../lib/oauth/discord'
 import { battledotnetEventHandler } from '../lib/oauth/battledotnet'
 import { keycloakEventHandler } from '../lib/oauth/keycloak'
 import { linkedinEventHandler } from '../lib/oauth/linkedin'
+import { oidcEventHandler } from '../lib/oauth/oidc'
 
 export const oauth = {
   githubEventHandler,
@@ -20,4 +21,5 @@ export const oauth = {
   battledotnetEventHandler,
   keycloakEventHandler,
   linkedinEventHandler,
+  oidcEventHandler
 }
