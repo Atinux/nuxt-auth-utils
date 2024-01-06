@@ -1,10 +1,11 @@
-import type { H3Event } from 'h3'
+import type { H3Event, H3Error } from 'h3'
 import { eventHandler, createError, getQuery, getRequestURL, sendRedirect } from 'h3'
 import { withQuery, parsePath } from 'ufo'
 import { ofetch } from 'ofetch'
 import { defu } from 'defu'
 import { useRuntimeConfig } from '#imports'
 import type { OAuthConfig } from '#auth-utils'
+import { type OAuthChecks, checks } from '../../utils/security'
 
 export interface OAuthAuth0Config {
   /**
@@ -24,7 +25,7 @@ export interface OAuthAuth0Config {
   domain?: string
   /**
    * Auth0 OAuth Audience
-   * @default process.env.NUXT_OAUTH_AUTH0_AUDIENCE
+   * @default ''
    */
   audience?: string
   /**
@@ -45,6 +46,13 @@ export interface OAuthAuth0Config {
    * @see https://auth0.com/docs/authenticate/login/max-age-reauthentication
    */
   maxAge?: number
+  /** 
+   * checks
+   * @default []
+   * @see https://auth0.com/docs/flows/authorization-code-flow-with-proof-key-for-code-exchange-pkce
+   * @see https://auth0.com/docs/protocols/oauth2/oauth-state
+   */
+  checks?: OAuthChecks[]
 }
 
 export function auth0EventHandler({ config, onSuccess, onError }: OAuthConfig<OAuthAuth0Config>) {
@@ -66,6 +74,7 @@ export function auth0EventHandler({ config, onSuccess, onError }: OAuthConfig<OA
 
     const redirectUrl = getRequestURL(event).href
     if (!code) {
+      const authParam = await checks.create(event, config.checks) // Initialize checks
       config.scope = config.scope || ['openid', 'offline_access']
       if (config.emailRequired && !config.scope.includes('email')) {
         config.scope.push('email')
@@ -80,8 +89,18 @@ export function auth0EventHandler({ config, onSuccess, onError }: OAuthConfig<OA
           scope: config.scope.join(' '),
           audience: config.audience || '',
           max_age: config.maxAge || 0,
+          ...authParam
         })
       )
+    }
+
+    // Verify checks
+    let checkResult
+    try {
+      checkResult = await checks.use(event, config.checks)
+    } catch (error) {
+      if (!onError) throw error
+      return onError(event, error as H3Error)
     }
 
     const tokens: any = await ofetch(
@@ -97,6 +116,7 @@ export function auth0EventHandler({ config, onSuccess, onError }: OAuthConfig<OA
           client_secret: config.clientSecret,
           redirect_uri: parsePath(redirectUrl).pathname,
           code,
+          ...checkResult
         }
       }
     ).catch(error => {
