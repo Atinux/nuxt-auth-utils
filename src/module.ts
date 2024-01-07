@@ -132,5 +132,12 @@ export default defineNuxtModule<ModuleOptions>({
       clientId: '',
       clientSecret: ''
     })
+    // Cognito OAuth
+    runtimeConfig.oauth.cognito = defu(runtimeConfig.oauth.cognito, {
+      clientId: '',
+      clientSecret: '',
+      region: '',
+      userPoolId: ''
+    })
   }
 })

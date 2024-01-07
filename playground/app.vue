@@ -61,6 +61,12 @@ const providers = computed(() => [
     to: '/auth/linkedin',
     disabled: Boolean(user.value?.linkedin),
     icon: 'i-simple-icons-linkedin',
+  },
+  {
+    label: user.value?.cognito?.email || 'Cognito',
+    to: '/auth/cognito',
+    disabled: Boolean(user.value?.cognito),
+    icon: 'i-simple-icons-amazonaws',
   }
 ].map(p => ({
   ...p,
