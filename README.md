@@ -154,6 +154,7 @@ It can also be set using environment variables:
 - Discord
 - GitHub
 - Google
+- Keycloak
 - LinkedIn
 - Microsoft
 - Spotify
@@ -187,6 +188,28 @@ export default oauth.githubEventHandler({
 ```
 
 Make sure to set the callback URL in your OAuth app settings as `<your-domain>/auth/github`.
+
+### Extend Session
+
+We leverage hooks to let you extend the session data with your own data or to log when the user clear its session.
+
+```ts
+// server/plugins/session.ts
+export default defineNitroPlugin(() => {
+  // Called when the session is fetched during SSR for the Vue composable (/api/_auth/session)
+  // Or when we call useUserSession().fetch()
+  sessionHooks.hook('fetch', async (session, event) => {
+    // extend User Session by calling your database
+    // or
+    // throw createError({ ... }) if session is invalid for example
+  })
+
+  // Called when we call useServerSession().clear() or clearUserSession(event)
+  sessionHooks.hook('clear', async (session, event) => {
+    // Log that user logged out
+  })
+})
+```
 
 ## Development
 
