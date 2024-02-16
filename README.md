@@ -169,6 +169,7 @@ It can also be set using environment variables:
 - Microsoft
 - Spotify
 - Twitch
+- OpenID Connect
 
 You can add your favorite provider by creating a new file in [src/runtime/server/lib/oauth/](./src/runtime/server/lib/oauth/).
 
