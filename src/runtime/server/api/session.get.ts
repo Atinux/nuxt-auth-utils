@@ -6,5 +6,5 @@ export default eventHandler(async (event) => {
 
   await sessionHooks.callHookParallel('fetch', session, event)
 
-  return session
+  return session.public
 })

@@ -3,7 +3,8 @@ import { useSession, createError } from 'h3'
 import { defu } from 'defu'
 import { createHooks } from 'hookable'
 import { useRuntimeConfig } from '#imports'
-import type { User, UserSession } from '#auth-utils'
+import type { PrivateSessionData, PublicSessionData } from '#auth-utils'
+import type { ActiveUserSession, UserSession } from '../../types/session'
 
 export interface SessionHooks {
   /**
@@ -23,15 +24,17 @@ export const sessionHooks = createHooks<SessionHooks>()
 export async function getUserSession (event: H3Event) {
   return (await _useSession(event)).data
 }
+
 /**
  * Set a user session
  * @param event
- * @param data User session data, please only store public information since it can be decoded with API calls
+ * @param publicData User session data, please only store public information since it can be decoded with API calls
+ * @param privateData Private session data, only accessible by calling `getUserSession` or `requireUserSession` on the server
  */
-export async function setUserSession (event: H3Event, data: UserSession) {
+export async function setUserSession (event: H3Event, publicData: PublicSessionData, privateData: PrivateSessionData) {
   const session = await _useSession(event)
 
-  await session.update(defu(data, session.data))
+  await session.update(defu(Object.assign(privateData, { public: publicData }), session.data))
 
   return session.data
 }
@@ -39,13 +42,14 @@ export async function setUserSession (event: H3Event, data: UserSession) {
 /**
  * Replace a user session
  * @param event
- * @param data User session data, please only store public information since it can be decoded with API calls
+ * @param publicData User session data, please only store public information since it can be decoded with API calls
+ * @param privateData Private session data, only accessible by calling `getUserSession` or `requireUserSession` on the server
  */
-export async function replaceUserSession (event: H3Event, data: UserSession) {
+export async function replaceUserSession (event: H3Event, publicData: PublicSessionData, privateData: PrivateSessionData) {
   const session = await _useSession(event)
 
   await session.clear()
-  await session.update(data)
+  await session.update(Object.assign(privateData, { public: publicData }))
 
   return session.data
 }
@@ -59,17 +63,17 @@ export async function clearUserSession (event: H3Event) {
   return true
 }
 
-export async function requireUserSession(event: H3Event): Promise<UserSession & { user: User }> {
-  const userSession = await getUserSession(event)
+export async function requireUserSession(event: H3Event): Promise<ActiveUserSession> {
+  const userSession = await getUserSession(event) || { public: {}}
 
-  if (!userSession.user) {
+  if (!userSession.public.user) {
     throw createError({
       statusCode: 401,
       message: 'Unauthorized'
     })
   }
 
-  return userSession as UserSession & { user: User }
+  return userSession as ActiveUserSession
 }
 
 let sessionConfig: SessionConfig
