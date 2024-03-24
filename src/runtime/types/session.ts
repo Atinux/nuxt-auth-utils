@@ -7,6 +7,10 @@ export interface UserSession {
   user?: User
 }
 
+export interface ActiveUserSession extends UserSession {
+  user: User
+}
+
 export interface UserSessionComposable {
   loggedIn: ComputedRef<boolean>
   user: ComputedRef<User | null>
