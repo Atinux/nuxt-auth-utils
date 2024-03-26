@@ -50,6 +50,12 @@ export interface OAuthMicrosoftConfig {
    * @see https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow
    */
   authorizationParams?: Record<string, string>
+  /**
+   * Redirect URL to prevent in prod prevent redirect_uri mismatch http to https
+   * @default process.env.NUXT_OAUTH_MICROSOFT_REDIRECT_URL
+   * @see https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow
+   */
+  redirectUrl?: string
 }
 
 interface OAuthConfig {
@@ -78,7 +84,7 @@ export function microsoftEventHandler({ config, onSuccess, onError }: OAuthConfi
     const authorizationURL = config.authorizationURL || `https://login.microsoftonline.com/${config.tenant}/oauth2/v2.0/authorize`
     const tokenURL = config.tokenURL || `https://login.microsoftonline.com/${config.tenant}/oauth2/v2.0/token`
 
-    const redirectUrl = getRequestURL(event).href
+    const redirectUrl =  config.redirectUrl || getRequestURL(event).href
     if (!code) {
 
       const scope = config.scope && config.scope.length > 0 ? config.scope : ['User.Read']
