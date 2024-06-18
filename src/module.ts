@@ -132,5 +132,11 @@ export default defineNuxtModule<ModuleOptions>({
       clientId: '',
       clientSecret: '',
     })
+    // XSUAA OAuth
+    runtimeConfig.oauth.xsuaa = defu(runtimeConfig.oauth.xsuaa, {
+      clientId: '',
+      clientSecret: '',
+      domain: '',
+    })
   },
 })

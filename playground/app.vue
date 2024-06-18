@@ -101,6 +101,12 @@ const providers = computed(() => [
     disabled: Boolean(user.value?.keycloak),
     icon: 'i-simple-icons-redhat',
   },
+  {
+    label: user.value?.xsuaa || 'XSUAA',
+    to: '/auth/xsuaa',
+    disabled: Boolean(user.value?.xsuaa),
+    icon: 'i-simple-icons-sap',
+  },
 ].map(p => ({
   ...p,
   prefetch: false,
