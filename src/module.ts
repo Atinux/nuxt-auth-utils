@@ -132,5 +132,10 @@ export default defineNuxtModule<ModuleOptions>({
       clientId: '',
       clientSecret: '',
     })
+    // PayPal OAuth
+    runtimeConfig.oauth.paypal = defu(runtimeConfig.oauth.paypal, {
+      clientId: '',
+      clientSecret: '',
+    })
   },
 })

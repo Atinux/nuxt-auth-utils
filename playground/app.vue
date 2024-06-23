@@ -101,6 +101,12 @@ const providers = computed(() => [
     disabled: Boolean(user.value?.keycloak),
     icon: 'i-simple-icons-redhat',
   },
+  {
+    label: session.value.user?.paypal || 'PayPal',
+    to: '/auth/paypal',
+    disabled: Boolean(user.value?.paypal),
+    icon: 'i-simple-icons-paypal',
+  },
 ].map(p => ({
   ...p,
   prefetch: false,
