@@ -13,6 +13,7 @@ declare module '#auth-utils' {
     linkedin?: string
     cognito?: string
     facebook?: string
+    steam?: string
   }
 
   interface UserSession {

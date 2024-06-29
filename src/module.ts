@@ -132,5 +132,9 @@ export default defineNuxtModule<ModuleOptions>({
       clientId: '',
       clientSecret: '',
     })
+    // Steam OAuth
+    runtimeConfig.oauth.steam = defu(runtimeConfig.oauth.steam, {
+      apiKey: '',
+    })
   },
 })
