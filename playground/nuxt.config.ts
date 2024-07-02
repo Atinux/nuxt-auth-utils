@@ -1,5 +1,8 @@
 export default defineNuxtConfig({
   compatibilityDate: '2024-06-17',
+  devServer: {
+    host: '0.0.0.0',
+  },
   extends: ['@nuxt/ui-pro'],
   modules: [
     'nuxt-auth-utils',
