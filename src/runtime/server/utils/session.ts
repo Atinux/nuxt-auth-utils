@@ -95,8 +95,11 @@ let sessionConfig: SessionConfig
 
 function _useSession(event: H3Event) {
   if (!sessionConfig) {
+    const runtimeConfig = useRuntimeConfig(event)
+    const envSessionPassword = `${runtimeConfig.nitro?.envPrefix || 'NUXT_'}SESSION_PASSWORD`
+
     // @ts-expect-error hard to define with defu
-    sessionConfig = defu({ password: process.env.NUXT_SESSION_PASSWORD }, useRuntimeConfig(event).session)
+    sessionConfig = defu({ password: process.env[envSessionPassword] }, runtimeConfig.session)
   }
   return useSession<UserSession>(event, sessionConfig)
 }
