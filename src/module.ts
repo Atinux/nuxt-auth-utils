@@ -111,6 +111,7 @@ export default defineNuxtModule<ModuleOptions>({
       authorizationURL: '',
       tokenURL: '',
       userURL: '',
+      redirectUrl: '',
     })
     // Discord OAuth
     runtimeConfig.oauth.discord = defu(runtimeConfig.oauth.discord, {
