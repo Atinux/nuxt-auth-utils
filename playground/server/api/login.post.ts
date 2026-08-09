@@ -30,8 +30,9 @@ export default defineEventHandler(async (event) => {
     throw invalidCredentialsError
   }
 
-  if (passwordNeedsReHash(password)) {
-    await db.sql`UPDATE users SET password = ${hashPassword(password)} WHERE id = ${user.id}`
+  if (passwordNeedsReHash(user.password)) {
+    const newHash = await hashPassword(password)
+    await db.sql`UPDATE users SET password = ${newHash} WHERE id = ${user.id}`
   }
 
   await setUserSession(event, {
