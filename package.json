@@ -54,8 +54,8 @@
   "peerDependencies": {
     "@atproto/api": "^0.13.15",
     "@atproto/oauth-client-node": "^0.2.0",
-    "@simplewebauthn/browser": "^11.0.0",
-    "@simplewebauthn/server": "^11.0.0"
+    "@simplewebauthn/browser": "^13.0.0",
+    "@simplewebauthn/server": "^13.0.0"
   },
   "peerDependenciesMeta": {
     "@simplewebauthn/browser": {
@@ -80,7 +80,6 @@
     "@nuxt/test-utils": "^4.0.0",
     "@types/node": "latest",
     "@nuxt/ui": "^4.4.0",
-    "@simplewebauthn/types": "^12.0.0",
     "changelogen": "^0.6.2",
     "eslint": "^10.0.0",
     "nuxt": "^4.3.1",

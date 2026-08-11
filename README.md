@@ -360,7 +360,7 @@ To enable WebAuthn you need to:
 1. Install the peer dependencies:
 
 ```bash
-npx nypm i @simplewebauthn/server@11 @simplewebauthn/browser@11
+npx nypm i @simplewebauthn/server@13 @simplewebauthn/browser@13
 ```
 
 2. Enable it in your `nuxt.config.ts`
