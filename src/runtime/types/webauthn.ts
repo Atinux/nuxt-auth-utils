@@ -1,4 +1,4 @@
-import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from '@simplewebauthn/types'
+import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from '@simplewebauthn/server'
 import type { Ref } from 'vue'
 import type { H3Event, H3Error, ValidateResult } from 'h3'
 import type {
