@@ -72,12 +72,21 @@ interface MastodonApp {
   client_secret: string
 }
 
-const INSTANCE_COOKIE_NAME = 'nuxt-auth-mastodon-instance'
+/** What we persist about an in-progress flow so the callback needs nothing beyond this cookie. */
+interface MastodonFlowState {
+  instance: string
+  clientId: string
+  clientSecret: string
+}
 
-// Registered apps per instance, so we don't re-register on every login. In-memory like the Bluesky
-// provider's session store: cleared on restart/cold start, swap for useStorage() if that's a problem
-// (e.g. multiple server workers, where a callback landing on a different worker than the one that
-// registered the app would fail to find its credentials here).
+const FLOW_COOKIE_NAME = 'nuxt-auth-mastodon-flow'
+
+// Registered apps, keyed by instance + redirect URL since Mastodon requires an exact redirect_uri
+// match against what was registered. This is a best-effort optimization only, to skip a redundant
+// `POST /api/v1/apps` call when the same worker recently registered the same app: the callback itself
+// never depends on this cache (see FLOW_COOKIE_NAME), so a miss here just costs one extra registration
+// call, it can't break a login the way relying on it for the callback would in a multi-worker/serverless
+// deployment.
 const appRegistry = new Map<string, MastodonApp>()
 // In-flight registration promises, so two concurrent first logins to the same instance await the same
 // registration instead of registering two separate apps (the second `set()` would otherwise silently
@@ -86,6 +95,10 @@ const pendingRegistrations = new Map<string, Promise<MastodonApp>>()
 // Arbitrary cap on distinct instances we'll register apps for, since `instance` is caller-controlled
 // input: without a bound, a stream of made-up instance domains would grow this map forever.
 const MAX_REGISTERED_INSTANCES = 1000
+
+function appRegistryKey(instance: string, redirectURL: string): string {
+  return `${instance}::${redirectURL}`
+}
 
 /**
  * Accepts a bare instance domain (`mastodon.social`) or a full handle (`@user@mastodon.social` or
@@ -123,26 +136,27 @@ async function registerApp(instance: string, redirectURL: string, scope: string,
 }
 
 async function getOrRegisterApp(instance: string, redirectURL: string, scope: string, clientName: string): Promise<MastodonApp> {
-  const cached = appRegistry.get(instance)
+  const key = appRegistryKey(instance, redirectURL)
+  const cached = appRegistry.get(key)
   if (cached) return cached
 
-  const pending = pendingRegistrations.get(instance)
+  const pending = pendingRegistrations.get(key)
   if (pending) return pending
 
   const registration = registerApp(instance, redirectURL, scope, clientName)
     .then((app) => {
-      if (appRegistry.size >= MAX_REGISTERED_INSTANCES && !appRegistry.has(instance)) {
-        const oldestInstance = appRegistry.keys().next().value
-        if (oldestInstance) appRegistry.delete(oldestInstance)
+      if (appRegistry.size >= MAX_REGISTERED_INSTANCES && !appRegistry.has(key)) {
+        const oldestKey = appRegistry.keys().next().value
+        if (oldestKey) appRegistry.delete(oldestKey)
       }
-      appRegistry.set(instance, app)
+      appRegistry.set(key, app)
       return app
     })
     .finally(() => {
-      pendingRegistrations.delete(instance)
+      pendingRegistrations.delete(key)
     })
 
-  pendingRegistrations.set(instance, registration)
+  pendingRegistrations.set(key, registration)
   return registration
 }
 
@@ -150,10 +164,13 @@ export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ con
   return eventHandler(async (event: H3Event) => {
     // Merge into a fresh object each request instead of reassigning `userConfig`: defu concatenates
     // arrays, so reusing the same reference across requests would grow `scope` by one 'read' every time.
+    // The default `scope` is applied manually (not through defu) for the same reason: defu concatenates
+    // array values instead of letting a configured scope replace it, so `['read:accounts']` would
+    // otherwise silently end up merged with the default into `['read:accounts', 'read']`.
     const config: OAuthMastodonConfig = defu({}, userConfig, useRuntimeConfig(event).oauth?.mastodon, {
       clientName: 'Nuxt Auth Utils',
-      scope: ['read'],
     })
+    config.scope ||= ['read']
 
     const query = getQuery<{ code?: string, error?: string, state?: string, instance?: string }>(event)
 
@@ -206,9 +223,14 @@ export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ con
         return onError(event, error)
       }
 
-      // Mastodon does not echo back the instance on the callback, so we remember which instance this
-      // flow was started against in order to complete the token exchange with the right app credentials.
-      setCookie(event, INSTANCE_COOKIE_NAME, instance, {
+      // Mastodon doesn't echo the instance back on the callback, and the app credentials it issued are
+      // per instance+redirect URL, so instead of relying on server memory (which the callback may not
+      // share with whatever registered the app, in multi-worker/serverless deployments) we persist what
+      // the callback needs in a cookie, same pattern as the Bluesky provider's StateStore. The
+      // client_secret ends up in this httpOnly/secure/10-min cookie; a leak only lets someone register
+      // apps under this instance, it isn't a path to any user's data.
+      const flowState: MastodonFlowState = { instance, clientId: app.client_id, clientSecret: app.client_secret }
+      setCookie(event, FLOW_COOKIE_NAME, btoa(JSON.stringify(flowState)), {
         httpOnly: true,
         secure: !isDevelopment,
         sameSite: 'lax',
@@ -229,33 +251,33 @@ export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ con
       return handleInvalidState(event, 'mastodon', onError)
     }
 
-    const instance = getCookie(event, INSTANCE_COOKIE_NAME)
-    deleteCookie(event, INSTANCE_COOKIE_NAME, { path: '/' })
+    const flowCookie = getCookie(event, FLOW_COOKIE_NAME)
+    deleteCookie(event, FLOW_COOKIE_NAME, { path: '/' })
 
-    if (!instance) {
+    let flowState: MastodonFlowState | undefined
+    try {
+      flowState = flowCookie ? JSON.parse(atob(flowCookie)) : undefined
+    }
+    catch {
+      flowState = undefined
+    }
+
+    if (!flowState) {
       const error = createError({
         statusCode: 400,
-        message: 'Mastodon login failed: could not determine which instance to complete the login against (missing instance cookie, the flow may have taken too long or cookies are blocked).',
+        message: 'Mastodon login failed: could not recover the application credentials for this login (missing or invalid flow cookie, the flow may have taken too long or cookies are blocked).',
       })
       if (!onError) throw error
       return onError(event, error)
     }
 
-    const app = appRegistry.get(instance)
-    if (!app) {
-      const error = createError({
-        statusCode: 500,
-        message: `Mastodon login failed: no registered application found for instance "${instance}".`,
-      })
-      if (!onError) throw error
-      return onError(event, error)
-    }
+    const { instance, clientId, clientSecret } = flowState
 
     const tokens = await requestAccessToken(`https://${instance}/oauth/token`, {
       body: {
         grant_type: 'authorization_code',
-        client_id: app.client_id,
-        client_secret: app.client_secret,
+        client_id: clientId,
+        client_secret: clientSecret,
         redirect_uri: redirectURL,
         code: query.code,
         scope,
