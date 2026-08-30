@@ -3,7 +3,7 @@ import { createError, deleteCookie, eventHandler, getCookie, getQuery, sendRedir
 import { withQuery } from 'ufo'
 import { defu } from 'defu'
 import { $fetch } from 'ofetch'
-import { getOAuthRedirectURL, handleAccessTokenErrorResponse, handleInvalidState, handleState, requestAccessToken } from '../utils'
+import { getOAuthRedirectURL, handleAccessTokenErrorResponse, handleInvalidState, handleState, isDevelopment, requestAccessToken } from '../utils'
 import { useRuntimeConfig } from '#imports'
 import type { OAuthConfig } from '#auth-utils'
 
@@ -75,8 +75,17 @@ interface MastodonApp {
 const INSTANCE_COOKIE_NAME = 'nuxt-auth-mastodon-instance'
 
 // Registered apps per instance, so we don't re-register on every login. In-memory like the Bluesky
-// provider's session store: cleared on restart/cold start, swap for useStorage() if that's a problem.
+// provider's session store: cleared on restart/cold start, swap for useStorage() if that's a problem
+// (e.g. multiple server workers, where a callback landing on a different worker than the one that
+// registered the app would fail to find its credentials here).
 const appRegistry = new Map<string, MastodonApp>()
+// In-flight registration promises, so two concurrent first logins to the same instance await the same
+// registration instead of registering two separate apps (the second `set()` would otherwise silently
+// invalidate the `client_secret` the first request is about to use).
+const pendingRegistrations = new Map<string, Promise<MastodonApp>>()
+// Arbitrary cap on distinct instances we'll register apps for, since `instance` is caller-controlled
+// input: without a bound, a stream of made-up instance domains would grow this map forever.
+const MAX_REGISTERED_INSTANCES = 1000
 
 /**
  * Accepts a bare instance domain (`mastodon.social`) or a full handle (`@user@mastodon.social` or
@@ -88,10 +97,19 @@ function resolveInstanceDomain(input: string): string {
   return withoutLeadingAt.includes('@') ? withoutLeadingAt.split('@').pop()! : withoutLeadingAt
 }
 
-async function getOrRegisterApp(instance: string, redirectURL: string, scope: string, clientName: string): Promise<MastodonApp> {
-  const cached = appRegistry.get(instance)
-  if (cached) return cached
+// `instance` is user-controlled, so we register applications and exchange tokens only against domains
+// that look like public internet hostnames: this blocks the obvious SSRF vectors (loopback, private,
+// link-local ranges, and bare IPs). It relies on the hostname string alone and does not resolve DNS, so
+// a domain that only resolves to a private address at request time is not caught here.
+function isPubliclyAddressableInstance(instance: string): boolean {
+  if (!instance || /\s/.test(instance)) return false
+  if (instance === 'localhost' || instance.endsWith('.localhost') || instance.endsWith('.local')) return false
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(instance)) return false // bare IPv4
+  if (instance.includes(':')) return false // bare IPv6 or a stray port
+  return true
+}
 
+async function registerApp(instance: string, redirectURL: string, scope: string, clientName: string): Promise<MastodonApp> {
   const app = await $fetch<{ client_id: string, client_secret: string }>(`https://${instance}/api/v1/apps`, {
     method: 'POST',
     body: {
@@ -101,9 +119,31 @@ async function getOrRegisterApp(instance: string, redirectURL: string, scope: st
     },
   })
 
-  const registered: MastodonApp = { client_id: app.client_id, client_secret: app.client_secret }
-  appRegistry.set(instance, registered)
-  return registered
+  return { client_id: app.client_id, client_secret: app.client_secret }
+}
+
+async function getOrRegisterApp(instance: string, redirectURL: string, scope: string, clientName: string): Promise<MastodonApp> {
+  const cached = appRegistry.get(instance)
+  if (cached) return cached
+
+  const pending = pendingRegistrations.get(instance)
+  if (pending) return pending
+
+  const registration = registerApp(instance, redirectURL, scope, clientName)
+    .then((app) => {
+      if (appRegistry.size >= MAX_REGISTERED_INSTANCES && !appRegistry.has(instance)) {
+        const oldestInstance = appRegistry.keys().next().value
+        if (oldestInstance) appRegistry.delete(oldestInstance)
+      }
+      appRegistry.set(instance, app)
+      return app
+    })
+    .finally(() => {
+      pendingRegistrations.delete(instance)
+    })
+
+  pendingRegistrations.set(instance, registration)
+  return registration
 }
 
 export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ config: userConfig, onSuccess, onError }: OAuthConfig<OAuthMastodonConfig, { user: TUser, tokens: MastodonTokens }>) {
@@ -144,6 +184,15 @@ export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ con
 
       const instance = resolveInstanceDomain(rawInstance)
 
+      if (!isPubliclyAddressableInstance(instance)) {
+        const error = createError({
+          statusCode: 400,
+          message: `Mastodon login failed: "${instance}" is not a valid instance domain.`,
+        })
+        if (!onError) throw error
+        return onError(event, error)
+      }
+
       let app: MastodonApp
       try {
         app = await getOrRegisterApp(instance, redirectURL, scope, config.clientName || 'Nuxt Auth Utils')
@@ -161,7 +210,7 @@ export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ con
       // flow was started against in order to complete the token exchange with the right app credentials.
       setCookie(event, INSTANCE_COOKIE_NAME, instance, {
         httpOnly: true,
-        secure: true,
+        secure: !isDevelopment,
         sameSite: 'lax',
         maxAge: 60 * 10,
         path: '/',

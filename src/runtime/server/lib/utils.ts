@@ -8,7 +8,7 @@ import type { OAuthProvider, OnError } from '#auth-utils'
 import { createError } from '#imports'
 
 // Determine if we are in development mode
-const isDevelopment = process.env.NODE_ENV === 'development'
+export const isDevelopment = process.env.NODE_ENV === 'development'
 
 // OAuth cookie expiration time (10 minutes in seconds)
 const OAUTH_COOKIE_MAX_AGE = 60 * 10

@@ -52,15 +52,13 @@ const providers = computed(() =>
       onClick() {
         const instance = prompt('Enter your Mastodon instance (e.g. mastodon.social)')
         if (instance) {
-          navigateTo(
-            {
-              path: '/auth/mastodon',
-              query: { instance },
-            },
-            {
-              external: true,
-            },
-          )
+          const route = { path: '/auth/mastodon', query: { instance } }
+          if (inPopup.value) {
+            openInPopup(`/auth/mastodon?instance=${encodeURIComponent(instance)}`)
+          }
+          else {
+            navigateTo(route, { external: true })
+          }
         }
       },
       disabled: Boolean(user.value?.mastodon),
