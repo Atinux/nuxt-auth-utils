@@ -47,6 +47,12 @@ export interface OAuthMastodonConfig {
 export interface OAuthMastodonUser {
   id: string
   username: string
+  /**
+   * Always the full `user@instance` handle here, even for the authenticated user's own account.
+   * Mastodon's API normally only qualifies `acct` with `@instance` for remote accounts and returns
+   * the bare username for your own, we normalize it since an account only means something together
+   * with the instance it lives on.
+   */
   acct: string
   display_name: string
   url: string
@@ -68,13 +74,8 @@ interface MastodonApp {
 
 const INSTANCE_COOKIE_NAME = 'nuxt-auth-mastodon-instance'
 
-/**
- * Registered apps, cached in-memory and keyed by instance domain, so we don't call `POST /api/v1/apps`
- * again on every login against the same instance. This mirrors the in-memory session store used by the
- * Bluesky provider (`src/runtime/server/lib/atproto/bluesky.ts`): it is intentionally simple and will be
- * cleared on server restart or on serverless cold starts. If registrations need to survive restarts or be
- * shared across instances, replace this with a persistent `useStorage()` binding.
- */
+// Registered apps per instance, so we don't re-register on every login. In-memory like the Bluesky
+// provider's session store: cleared on restart/cold start, swap for useStorage() if that's a problem.
 const appRegistry = new Map<string, MastodonApp>()
 
 /**
@@ -105,12 +106,14 @@ async function getOrRegisterApp(instance: string, redirectURL: string, scope: st
   return registered
 }
 
-export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ config, onSuccess, onError }: OAuthConfig<OAuthMastodonConfig, { user: TUser, tokens: MastodonTokens }>) {
+export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ config: userConfig, onSuccess, onError }: OAuthConfig<OAuthMastodonConfig, { user: TUser, tokens: MastodonTokens }>) {
   return eventHandler(async (event: H3Event) => {
-    config = defu(config, useRuntimeConfig(event).oauth?.mastodon, {
+    // Merge into a fresh object each request instead of reassigning `userConfig`: defu concatenates
+    // arrays, so reusing the same reference across requests would grow `scope` by one 'read' every time.
+    const config: OAuthMastodonConfig = defu({}, userConfig, useRuntimeConfig(event).oauth?.mastodon, {
       clientName: 'Nuxt Auth Utils',
       scope: ['read'],
-    }) as OAuthMastodonConfig
+    })
 
     const query = getQuery<{ code?: string, error?: string, state?: string, instance?: string }>(event)
 
@@ -214,11 +217,18 @@ export function defineOAuthMastodonEventHandler<TUser = OAuthMastodonUser>({ con
       return handleAccessTokenErrorResponse(event, 'mastodon', tokens, onError)
     }
 
-    const user = await $fetch<TUser>(`https://${instance}/api/v1/accounts/verify_credentials`, {
+    const account = await $fetch<OAuthMastodonUser>(`https://${instance}/api/v1/accounts/verify_credentials`, {
       headers: {
         Authorization: `Bearer ${tokens.access_token}`,
       },
     })
+
+    // Mastodon only qualifies `acct` with `@instance` for remote accounts, own account comes back as
+    // just the username. Normalize it since the identity only makes sense together with its instance.
+    const user = {
+      ...account,
+      acct: account.acct.includes('@') ? account.acct : `${account.acct}@${instance}`,
+    } as TUser
 
     return onSuccess(event, {
       user,
