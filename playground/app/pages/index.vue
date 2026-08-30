@@ -48,6 +48,25 @@ const providers = computed(() =>
       icon: 'i-simple-icons-bluesky',
     },
     {
+      title: user.value?.mastodon || 'Mastodon',
+      onClick() {
+        const instance = prompt('Enter your Mastodon instance (e.g. mastodon.social)')
+        if (instance) {
+          navigateTo(
+            {
+              path: '/auth/mastodon',
+              query: { instance },
+            },
+            {
+              external: true,
+            },
+          )
+        }
+      },
+      disabled: Boolean(user.value?.mastodon),
+      icon: 'i-simple-icons-mastodon',
+    },
+    {
       title: user.value?.gitlab || 'GitLab',
       to: '/auth/gitlab',
       disabled: Boolean(user.value?.gitlab),
