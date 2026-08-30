@@ -48,6 +48,23 @@ const providers = computed(() =>
       icon: 'i-simple-icons-bluesky',
     },
     {
+      title: user.value?.mastodon || 'Mastodon',
+      onClick() {
+        const instance = prompt('Enter your Mastodon instance (e.g. mastodon.social)')
+        if (instance) {
+          const route = { path: '/auth/mastodon', query: { instance } }
+          if (inPopup.value) {
+            openInPopup(`/auth/mastodon?instance=${encodeURIComponent(instance)}`)
+          }
+          else {
+            navigateTo(route, { external: true })
+          }
+        }
+      },
+      disabled: Boolean(user.value?.mastodon),
+      icon: 'i-simple-icons-mastodon',
+    },
+    {
       title: user.value?.gitlab || 'GitLab',
       to: '/auth/gitlab',
       disabled: Boolean(user.value?.gitlab),
